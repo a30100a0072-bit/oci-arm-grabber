@@ -1,62 +1,62 @@
 name: grab-arm
-  on:
-    schedule:
-      - cron: '*/30 * * * *'
-    workflow_dispatch: {}
-  jobs:
-    launch:
-      runs-on: ubuntu-latest
-      steps:
-        - name: Configure OCI CLI
-          env:
-            OCI_KEY: ${{ secrets.OCI_KEY }}
-            OCI_USER: ${{ secrets.OCI_USER }}
-            OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-            OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
-            OCI_REGION: ${{ secrets.OCI_REGION }}
-          run: |
-            mkdir -p ~/.oci
-            printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem
-            chmod 600 ~/.oci/key.pem
-            {
-              echo "[DEFAULT]"
-              echo "user=$OCI_USER"
-              echo "fingerprint=$OCI_FINGERPRINT"
-              echo "tenancy=$OCI_TENANCY"
-              echo "region=$OCI_REGION"
-              echo "key_file=$HOME/.oci/key.pem"
-            } > ~/.oci/config
-            chmod 600 ~/.oci/config
-        - name: Install OCI CLI
-          run: pip install --quiet oci-cli
-        - name: Launch attempt
-          env:
-            SSH_PUBKEY: ${{ secrets.SSH_PUBKEY }}
-            COMP: ${{ secrets.OCI_TENANCY }}
-          run: |
-            set -e
-            EX=$(oci compute instance list -c "$COMP" --display-name silvercare --lifecycle-state
-  RUNNING --query 'data[0].id' --raw-output 2>/dev/null || true)
-            if [ -n "$EX" ] && [ "$EX" != null ]; then echo "Already running: $EX"; exit 0; fi
-            AD=$(oci iam availability-domain list --query 'data[0].name' --raw-output)
-            IMG=$(oci compute image list -c "$COMP" --operating-system "Canonical Ubuntu"
-  --operating-system-version "22.04" --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order
-  DESC --query 'data[0].id' --raw-output)
-            SUB=$(oci network subnet list -c "$COMP" --lifecycle-state AVAILABLE --query 'data[0].id'
-  --raw-output)
-            echo "AD=$AD"; echo "IMG=$IMG"; echo "SUB=$SUB"
-            printf '%s\n' "$SSH_PUBKEY" > /tmp/id.pub
-            if oci compute instance launch \
-              --availability-domain "$AD" --compartment-id "$COMP" \
-              --shape VM.Standard.A1.Flex \
-              --shape-config '{"ocpus":1,"memoryInGBs":6}' \
-              --image-id "$IMG" --subnet-id "$SUB" \
-              --assign-public-ip false --display-name silvercare \
-              --ssh-authorized-keys-file /tmp/id.pub \
-              --wait-for-state RUNNING 2>/tmp/err; then
-              echo "=== SUCCESS: instance launched ==="
-            elif grep -qiE "out of.*capacity|TooManyRequests" /tmp/err; then
-              echo "no capacity / rate-limited — will retry next run"; cat /tmp/err; exit 0
-            else
-              echo "REAL ERROR:"; cat /tmp/err; exit 1
-            fi
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure OCI CLI
+        env:
+          OCI_KEY: ${{ secrets.OCI_KEY }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          {
+            echo "[DEFAULT]"
+            echo "user=$OCI_USER"
+            echo "fingerprint=$OCI_FINGERPRINT"
+            echo "tenancy=$OCI_TENANCY"
+            echo "region=$OCI_REGION"
+            echo "key_file=$HOME/.oci/key.pem"
+          } > ~/.oci/config
+          chmod 600 ~/.oci/config
+      - name: Install OCI CLI
+        run: pip install --quiet oci-cli
+      - name: Launch attempt
+        env:
+          SSH_PUBKEY: ${{ secrets.SSH_PUBKEY }}
+          COMP: ${{ secrets.OCI_TENANCY }}
+        run: |
+          set -e
+          EX=$(oci compute instance list -c "$COMP" --display-name silvercare --lifecycle-state
+RUNNING --query 'data[0].id' --raw-output 2>/dev/null || true)
+          if [ -n "$EX" ] && [ "$EX" != null ]; then echo "Already running: $EX"; exit 0; fi
+          AD=$(oci iam availability-domain list --query 'data[0].name' --raw-output)
+          IMG=$(oci compute image list -c "$COMP" --operating-system "Canonical Ubuntu"
+--operating-system-version "22.04" --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order
+DESC --query 'data[0].id' --raw-output)
+          SUB=$(oci network subnet list -c "$COMP" --lifecycle-state AVAILABLE --query 'data[0].id'
+--raw-output)
+          echo "AD=$AD"; echo "IMG=$IMG"; echo "SUB=$SUB"
+          printf '%s\n' "$SSH_PUBKEY" > /tmp/id.pub
+          if oci compute instance launch \
+            --availability-domain "$AD" --compartment-id "$COMP" \
+            --shape VM.Standard.A1.Flex \
+            --shape-config '{"ocpus":1,"memoryInGBs":6}' \
+            --image-id "$IMG" --subnet-id "$SUB" \
+            --assign-public-ip false --display-name silvercare \
+            --ssh-authorized-keys-file /tmp/id.pub \
+            --wait-for-state RUNNING 2>/tmp/err; then
+            echo "=== SUCCESS: instance launched ==="
+          elif grep -qiE "out of.*capacity|TooManyRequests" /tmp/err; then
+            echo "no capacity / rate-limited — will retry next run"; cat /tmp/err; exit 0
+          else
+            echo "REAL ERROR:"; cat /tmp/err; exit 1
+          fi
